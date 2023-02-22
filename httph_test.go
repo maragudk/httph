@@ -105,10 +105,8 @@ func TestNoClickjacking(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		res := httptest.NewRecorder()
 
-		mux := http.NewServeMux()
-		mux.HandleFunc("/", httph.NoClickjacking(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})))
-
-		mux.ServeHTTP(res, req)
+		h := httph.NoClickjacking(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		h.ServeHTTP(res, req)
 
 		is.Equal(t, http.StatusOK, res.Result().StatusCode)
 		is.Equal(t, "deny", res.Result().Header.Get("X-Frame-Options"))
