@@ -99,3 +99,19 @@ func readBody(t *testing.T, r io.Reader) string {
 	}
 	return strings.TrimSpace(string(d))
 }
+
+func TestNoClickjacking(t *testing.T) {
+	t.Run("adds X-Frame-Options and X-XSS-Protection headers", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		res := httptest.NewRecorder()
+
+		mux := http.NewServeMux()
+		mux.HandleFunc("/", httph.NoClickjacking(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})))
+
+		mux.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusOK, res.Result().StatusCode)
+		is.Equal(t, "deny", res.Result().Header.Get("X-Frame-Options"))
+		is.Equal(t, "1; mode=block", res.Result().Header.Get("X-XSS-Protection"))
+	})
+}
