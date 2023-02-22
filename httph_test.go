@@ -115,3 +115,34 @@ func TestNoClickjacking(t *testing.T) {
 		is.Equal(t, "1; mode=block", res.Result().Header.Get("X-XSS-Protection"))
 	})
 }
+
+func TestContentSecurityPolicy(t *testing.T) {
+	t.Run("restrict everything to 'none' except images, styles, scripts, and fonts", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		res := httptest.NewRecorder()
+
+		h := httph.ContentSecurityPolicy(nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusOK, res.Result().StatusCode)
+		is.Equal(t, "default-src 'none'; font-src 'self'; img-src 'self'; script-src 'self'; style-src 'self'",
+			res.Result().Header.Get("Content-Security-Policy"))
+	})
+
+	t.Run("can set directives with options function", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		res := httptest.NewRecorder()
+
+		optsFunc := func(opts *httph.ContentSecurityPolicyOptions) {
+			opts.DefaultSrc = "https:"
+			opts.FontSrc = ""
+			opts.ScriptSrc = ""
+		}
+		h := httph.ContentSecurityPolicy(optsFunc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusOK, res.Result().StatusCode)
+		is.Equal(t, "default-src https:; img-src 'self'; style-src 'self'",
+			res.Result().Header.Get("Content-Security-Policy"))
+	})
+}
