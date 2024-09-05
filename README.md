@@ -5,4 +5,8 @@
 
 HTTP helpers and middleware. H is for helpful!
 
+```shell
+go get maragu.dev/httph
+```
+
 Made in 🇩🇰 by [maragu](https://www.maragu.dk/), maker of [online Go courses](https://www.golang.dk/).
