@@ -1,3 +1,7 @@
+.PHONY: benchmark
+benchmark:
+	go test -bench=.
+
 .PHONY: cover
 cover:
 	go tool cover -html=cover.out

@@ -2,7 +2,9 @@
 package httph
 
 import (
+	"embed"
 	"fmt"
+	"html/template"
 	"net/http"
 	"strings"
 
@@ -145,4 +147,77 @@ func maybeAddDirective(name, value string) string {
 		return ""
 	}
 	return fmt.Sprintf("%v %v; ", name, value)
+}
+
+//go:embed goget.gohtml
+var goGetFS embed.FS
+
+type GoGetOptions struct {
+	Domain    string   // Domain to serve URLs for, for example: "maragu.dev"
+	Modules   []string // Lit of module names, for example: "httph", "foo"
+	URLPrefix string   // URL prefix to serve the module from, for example: "https://github.com/maragudk"
+}
+
+// GoGet is Middleware to support redirecting go get requests to module VCS URLs, popularly known as vanity URLs.
+// See https://sagikazarmark.hu/blog/vanity-import-paths-in-go/
+func GoGet(opts GoGetOptions) Middleware {
+	if opts.Domain == "" {
+		panic("invalid domain")
+	}
+
+	if len(opts.Modules) == 0 {
+		panic("no modules")
+	}
+	for _, m := range opts.Modules {
+		if m == "" {
+			panic("invalid module")
+		}
+	}
+
+	if !strings.HasPrefix(opts.URLPrefix, "http") {
+		panic("invalid URL prefix")
+	}
+	opts.URLPrefix = strings.TrimSuffix(opts.URLPrefix, "/")
+
+	t := template.Must(template.ParseFS(goGetFS, "goget.gohtml"))
+
+	modules := map[string]struct{}{}
+	for _, m := range opts.Modules {
+		modules[m] = struct{}{}
+	}
+
+	type Data struct {
+		Domain    string
+		Module    string
+		URLPrefix string
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			parts := strings.Split(r.URL.Path, "/")
+			module := parts[1]
+			// Exit early if the module is not in the list of modules
+			if _, ok := modules[module]; !ok {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Redirect to the module's URL if the request is not a go-get request
+			goGet := r.URL.Query().Get("go-get")
+			if goGet != "1" {
+				http.Redirect(w, r, fmt.Sprintf("%v/%v", opts.URLPrefix, module), http.StatusPermanentRedirect)
+				return
+			}
+
+			data := Data{
+				Domain:    opts.Domain,
+				Module:    module,
+				URLPrefix: opts.URLPrefix,
+			}
+			if err := t.Execute(w, data); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		})
+	}
 }

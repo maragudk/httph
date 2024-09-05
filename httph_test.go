@@ -1,6 +1,7 @@
 package httph_test
 
 import (
+	_ "embed"
 	"errors"
 	"io"
 	"net/http"
@@ -142,5 +143,71 @@ func TestContentSecurityPolicy(t *testing.T) {
 		is.Equal(t, http.StatusOK, res.Result().StatusCode)
 		is.Equal(t, "default-src https:; img-src 'self'; style-src 'self'",
 			res.Result().Header.Get("Content-Security-Policy"))
+	})
+}
+
+//go:embed testdata/goget.html
+var goGetHTML string
+
+func TestGoGet(t *testing.T) {
+	t.Run("serves HTML for Go modules", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/httph?go-get=1", nil)
+		res := httptest.NewRecorder()
+
+		h := httph.GoGet(httph.GoGetOptions{
+			Domain:    "maragu.dev",
+			Modules:   []string{"httph"},
+			URLPrefix: "https://github.com/maragudk",
+		})
+
+		called := false
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+		})
+		h(next).ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusOK, res.Result().StatusCode)
+		is.Equal(t, goGetHTML, res.Body.String())
+		is.True(t, !called)
+	})
+
+	t.Run("passes through non-module requests", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		res := httptest.NewRecorder()
+
+		h := httph.GoGet(httph.GoGetOptions{
+			Domain:    "maragu.dev",
+			Modules:   []string{"httph"},
+			URLPrefix: "https://github.com/maragudk",
+		})
+
+		called := false
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+		})
+		h(next).ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusOK, res.Result().StatusCode)
+		is.True(t, called)
+	})
+
+	t.Run("redirects valid modules to the URL prefix when no go-get parameter is supplied", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/httph", nil)
+		res := httptest.NewRecorder()
+
+		h := httph.GoGet(httph.GoGetOptions{
+			Domain:    "maragu.dev",
+			Modules:   []string{"httph"},
+			URLPrefix: "https://github.com/maragudk",
+		})
+
+		called := false
+		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			called = true
+		})
+		h(next).ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusPermanentRedirect, res.Result().StatusCode)
+		is.True(t, !called)
 	})
 }
