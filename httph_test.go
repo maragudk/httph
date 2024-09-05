@@ -12,7 +12,7 @@ import (
 
 	"github.com/maragudk/is"
 
-	"github.com/maragudk/httph"
+	"maragu.dev/httph"
 )
 
 type validatedFormReq struct{}

@@ -1,4 +1,4 @@
-module github.com/maragudk/httph
+module maragu.dev/httph
 
 go 1.19
 
