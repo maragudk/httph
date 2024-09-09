@@ -211,3 +211,27 @@ func TestGoGet(t *testing.T) {
 		is.True(t, !called)
 	})
 }
+
+func TestVersionedAssets(t *testing.T) {
+	t.Run("removes version from asset path", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/script.123456.js", nil)
+		res := httptest.NewRecorder()
+
+		h := httph.VersionedAssets(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusOK, res.Result().StatusCode)
+		is.Equal(t, "/script.js", req.URL.Path)
+	})
+
+	t.Run("does not modify path without version", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/script.js", nil)
+		res := httptest.NewRecorder()
+
+		h := httph.VersionedAssets(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusOK, res.Result().StatusCode)
+		is.Equal(t, "/script.js", req.URL.Path)
+	})
+}

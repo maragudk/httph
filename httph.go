@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
@@ -220,4 +221,20 @@ func GoGet(opts GoGetOptions) Middleware {
 			}
 		})
 	}
+}
+
+// versionedAssetMatcher matches versioned assets like "app.abc123.js".
+// See https://regex101.com/r/bGfflm/latest
+var versionedAssetMatcher = regexp.MustCompile(`^(?P<name>[^.]+)\.[a-z0-9]+(?P<extension>\.[a-z0-9]+)$`)
+
+// VersionedAssets is Middleware to help serve versioned assets without the version.
+// It basically strips the version from the asset path and forwards the request, probably to a static file handler.
+func VersionedAssets(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if versionedAssetMatcher.MatchString(r.URL.Path) {
+			r.URL.Path = versionedAssetMatcher.ReplaceAllString(r.URL.Path, `$1$2`)
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }
