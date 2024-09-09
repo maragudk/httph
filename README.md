@@ -1,6 +1,6 @@
 # httph
 
-[![GoDoc](https://pkg.go.dev/badge/github.com/maragudk/gomponents)](https://pkg.go.dev/github.com/maragudk/httph)
+[![GoDoc](https://pkg.go.dev/badge/maragu.dev/httph)](https://pkg.go.dev/maragu.dev/httph)
 [![Go](https://github.com/maragudk/gomponents/actions/workflows/ci.yml/badge.svg)](https://github.com/maragudk/httph/actions/workflows/ci.yml)
 
 HTTP helpers and middleware. H is for helpful!
