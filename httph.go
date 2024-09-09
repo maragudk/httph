@@ -159,7 +159,7 @@ type GoGetOptions struct {
 }
 
 // GoGet is Middleware to support redirecting go get requests to module VCS URLs, popularly known as vanity URLs.
-// See https://sagikazarmark.hu/blog/vanity-import-paths-in-go/
+// See https://www.maragu.dev/blog/til-http-middleware-for-custom-go-module-paths
 func GoGet(opts GoGetOptions) Middleware {
 	if opts.Domain == "" {
 		panic("invalid domain")
