@@ -88,6 +88,30 @@ func TestFormHandler(t *testing.T) {
 	})
 }
 
+func ExampleFormHandler() {
+	type Req struct {
+		Name string
+		Age  int
+	}
+
+	h := httph.FormHandler(func(w http.ResponseWriter, r *http.Request, req Req) {
+		_, _ = fmt.Fprintf(w, "Hello %v, you are %v years old", req.Name, req.Age)
+	})
+
+	w := httptest.NewRecorder()
+	vs := url.Values{
+		"name": {"World"},
+		"age":  {"20"},
+	}
+	r := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(vs.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.ServeHTTP(w, r)
+
+	body, _ := io.ReadAll(w.Result().Body)
+	fmt.Println(string(body))
+	//Output: Hello World, you are 20 years old
+}
+
 func createFormRequest(vs url.Values) *http.Request {
 	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(vs.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -251,10 +275,8 @@ func ExampleJSONHandler() {
 		return Res{Message: "Hello " + req.Name}, nil
 	})
 
-	mux := http.NewServeMux()
-	mux.Handle("/", h)
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"Name":"World"}`)))
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"Name":"World"}`)))
 
 	body, _ := io.ReadAll(w.Result().Body)
 	fmt.Println(string(body))
