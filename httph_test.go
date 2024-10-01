@@ -3,6 +3,7 @@ package httph_test
 import (
 	_ "embed"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -69,7 +70,7 @@ func TestFormHandler(t *testing.T) {
 		h.ServeHTTP(res, req)
 
 		is.Equal(t, http.StatusBadRequest, res.Result().StatusCode)
-		is.True(t, strings.Contains(readBody(t, res.Result().Body), "cannot parse 'Age' as int"))
+		is.True(t, strings.Contains(readBody(t, res), "cannot parse 'Age' as int"))
 	})
 
 	t.Run("returns bad request when Validate() returns error", func(t *testing.T) {
@@ -83,7 +84,7 @@ func TestFormHandler(t *testing.T) {
 		h.ServeHTTP(res, req)
 
 		is.Equal(t, http.StatusBadRequest, res.Result().StatusCode)
-		is.Equal(t, "invalid form: invalid", readBody(t, res.Result().Body))
+		is.Equal(t, "invalid form: invalid", readBody(t, res))
 	})
 }
 
@@ -93,12 +94,171 @@ func createFormRequest(vs url.Values) *http.Request {
 	return req
 }
 
-func readBody(t *testing.T, r io.Reader) string {
-	d, err := io.ReadAll(r)
+func readBody(t *testing.T, r *httptest.ResponseRecorder) string {
+	t.Helper()
+
+	d, err := io.ReadAll(r.Result().Body)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return strings.TrimSpace(string(d))
+}
+
+type httpError struct {
+	code int
+}
+
+func (h *httpError) Error() string {
+	return http.StatusText(h.code)
+}
+
+func (h *httpError) StatusCode() int {
+	return h.code
+}
+
+type jsonRes struct {
+	Message string
+}
+
+func (j jsonRes) StatusCode() int {
+	return http.StatusAccepted
+}
+
+func TestJSONHandler(t *testing.T) {
+	t.Run("encodes response body to JSON", func(t *testing.T) {
+		type jsonRes struct {
+			Message string `json:"message"`
+		}
+
+		h := httph.JSONHandler(func(w http.ResponseWriter, r *http.Request, _ any) (jsonRes, error) {
+			return jsonRes{Message: "Yo"}, nil
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		res := httptest.NewRecorder()
+
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusOK, res.Result().StatusCode)
+		is.Equal(t, `{"message":"Yo"}`, readBody(t, res))
+	})
+
+	t.Run("parses request body from JSON", func(t *testing.T) {
+		type jsonReq struct {
+			Name string
+		}
+
+		h := httph.JSONHandler(func(w http.ResponseWriter, r *http.Request, req jsonReq) (any, error) {
+			is.Equal(t, "Me", req.Name)
+			return nil, nil
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"Name":"Me"}`))
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusOK, res.Result().StatusCode)
+	})
+
+	t.Run("returns bad request if request body is not valid JSON", func(t *testing.T) {
+		type jsonReq struct {
+			Name string
+		}
+
+		h := httph.JSONHandler(func(w http.ResponseWriter, r *http.Request, req jsonReq) (any, error) {
+			return nil, nil
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{`))
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusBadRequest, res.Result().StatusCode)
+		is.Equal(t, `{"Error":"error decoding request body as JSON: unexpected EOF"}`, readBody(t, res))
+	})
+
+	t.Run("returns error message if handler errors", func(t *testing.T) {
+		h := httph.JSONHandler(func(w http.ResponseWriter, r *http.Request, _ any) (any, error) {
+			return nil, errors.New("oh no")
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		res := httptest.NewRecorder()
+
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusInternalServerError, res.Result().StatusCode)
+		is.Equal(t, `{"Error":"oh no"}`, readBody(t, res))
+	})
+
+	t.Run("returns error message with custom http status code if error satisfies statusCodeGiver", func(t *testing.T) {
+		h := httph.JSONHandler(func(w http.ResponseWriter, r *http.Request, _ any) (any, error) {
+			return nil, &httpError{http.StatusTeapot}
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		res := httptest.NewRecorder()
+
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusTeapot, res.Result().StatusCode)
+		is.Equal(t, `{"Error":"I'm a teapot"}`, readBody(t, res))
+	})
+
+	t.Run("returns error message if response body cannot be encoded to JSON", func(t *testing.T) {
+		h := httph.JSONHandler(func(w http.ResponseWriter, r *http.Request, _ any) (any, error) {
+			return make(chan int), nil
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		res := httptest.NewRecorder()
+
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusInternalServerError, res.Result().StatusCode)
+		is.Equal(t, `{"Error":"error encoding response body as JSON: json: unsupported type: chan int"}`, readBody(t, res))
+	})
+
+	t.Run("returns custom status code if response struct satisfies statusCodeGiver", func(t *testing.T) {
+		h := httph.JSONHandler(func(w http.ResponseWriter, r *http.Request, _ any) (jsonRes, error) {
+			return jsonRes{Message: "Yo"}, nil
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		res := httptest.NewRecorder()
+
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusAccepted, res.Result().StatusCode)
+		is.Equal(t, `{"Message":"Yo"}`, readBody(t, res))
+	})
+}
+
+func ExampleJSONHandler() {
+	type Req struct {
+		Name string
+	}
+
+	type Res struct {
+		Message string
+	}
+
+	h := httph.JSONHandler(func(w http.ResponseWriter, r *http.Request, req Req) (Res, error) {
+		return Res{Message: "Hello " + req.Name}, nil
+	})
+
+	mux := http.NewServeMux()
+	mux.Handle("/", h)
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"Name":"World"}`)))
+
+	body, _ := io.ReadAll(w.Result().Body)
+	fmt.Println(string(body))
+	//Output: {"Message":"Hello World"}
 }
 
 func TestNoClickjacking(t *testing.T) {

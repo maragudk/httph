@@ -2,9 +2,13 @@
 package httph
 
 import (
+	"bufio"
+	"bytes"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -50,6 +54,76 @@ func FormHandler[Req any](h func(http.ResponseWriter, *http.Request, Req)) http.
 
 		h(w, r, req)
 	}
+}
+
+// statusCodeGiver is something that can give a status code.
+type statusCodeGiver interface {
+	StatusCode() int
+}
+
+// JSONHandler takes a function that is like a regular http.Handler, except it also receives a struct with values
+// parsed from the request body as JSON. The function also returns a struct that will be encoded as JSON in the response.
+// If either the response struct or error satisfy the statusCodeGiver interface, the given HTTP status code is returned.
+func JSONHandler[Req any, Res any](h func(http.ResponseWriter, *http.Request, Req) (Res, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Allow a 1MB request body
+		r.Body = http.MaxBytesReader(w, r.Body, 1048576)
+
+		// Try reading a request body, skip if there is none
+		var req Req
+		br := bufio.NewReader(r.Body)
+		if _, err := br.Peek(1); err == nil {
+			dec := json.NewDecoder(br)
+
+			if err := dec.Decode(&req); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				writeResponse(w, errorResponse{
+					Error: fmt.Errorf("error decoding request body as JSON: %w", err).Error(),
+				})
+				return
+			}
+		}
+
+		res, err := h(w, r, req)
+		if err != nil {
+			code := http.StatusInternalServerError
+			if err, ok := err.(statusCodeGiver); ok {
+				code = err.StatusCode()
+			}
+
+			w.WriteHeader(code)
+			writeResponse(w, errorResponse{Error: err.Error()})
+			return
+		}
+
+		// Try encoding to a buffer first, to catch any encoding errors
+		var b bytes.Buffer
+		if err := json.NewEncoder(&b).Encode(res); err != nil {
+			w.WriteHeader(http.StatusInternalServerError)
+			writeResponse(w, errorResponse{
+				Error: fmt.Errorf("error encoding response body as JSON: %w", err).Error(),
+			})
+			return
+		}
+
+		code := http.StatusOK
+		if res, ok := any(res).(statusCodeGiver); ok {
+			code = res.StatusCode()
+		}
+		w.WriteHeader(code)
+
+		// There's not much we can do about an error here, so ignore it
+		_, _ = io.Copy(w, &b)
+	}
+}
+
+func writeResponse(w io.Writer, v any) {
+	// If there's an error here, it's probably an error writing to the client that we can't do anything about, so ignore it.
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+type errorResponse struct {
+	Error string
 }
 
 // Middleware is a function that takes an http.Handler and returns an http.Handler.
