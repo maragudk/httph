@@ -148,6 +148,14 @@ func (j jsonRes) StatusCode() int {
 	return http.StatusAccepted
 }
 
+type tinyJSONReq struct {
+	Name string
+}
+
+func (t tinyJSONReq) MaxSizeBytes() int64 {
+	return 1
+}
+
 func TestJSONHandler(t *testing.T) {
 	t.Run("encodes response body to JSON", func(t *testing.T) {
 		type jsonRes struct {
@@ -259,6 +267,21 @@ func TestJSONHandler(t *testing.T) {
 
 		is.Equal(t, http.StatusAccepted, res.Result().StatusCode)
 		is.Equal(t, `{"Message":"Yo"}`, readBody(t, res))
+	})
+
+	t.Run("returns bad request if request body is too large", func(t *testing.T) {
+		h := httph.JSONHandler(func(w http.ResponseWriter, r *http.Request, _ tinyJSONReq) (any, error) {
+			return nil, nil
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"Name":"Me"}`))
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusBadRequest, res.Result().StatusCode)
+		is.Equal(t, `{"Error":"error decoding request body as JSON: http: request body too large"}`, readBody(t, res))
 	})
 }
 
