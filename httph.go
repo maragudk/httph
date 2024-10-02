@@ -61,16 +61,23 @@ type statusCodeGiver interface {
 	StatusCode() int
 }
 
+// maxSizeGiver is something that can give a max size in bytes.
+type maxSizeGiver interface {
+	MaxSizeBytes() int64
+}
+
 // JSONHandler takes a function that is like a regular http.Handler, except it also receives a struct with values
 // parsed from the request body as JSON. The function also returns a struct that will be encoded as JSON in the response.
 // If either the response struct or error satisfy the statusCodeGiver interface, the given HTTP status code is returned.
 func JSONHandler[Req any, Res any](h func(http.ResponseWriter, *http.Request, Req) (Res, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Allow a 1MB request body
-		r.Body = http.MaxBytesReader(w, r.Body, 1048576)
+		var req Req
+
+		if req, ok := any(req).(maxSizeGiver); ok {
+			r.Body = http.MaxBytesReader(w, r.Body, req.MaxSizeBytes())
+		}
 
 		// Try reading a request body, skip if there is none
-		var req Req
 		br := bufio.NewReader(r.Body)
 		if _, err := br.Peek(1); err == nil {
 			dec := json.NewDecoder(br)
