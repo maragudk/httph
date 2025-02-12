@@ -78,14 +78,26 @@ func JSONHandler[Req any, Res any](h func(http.ResponseWriter, *http.Request, Re
 		}
 
 		// Try reading a request body, skip if there is none
+		var foundRequestBody bool
 		br := bufio.NewReader(r.Body)
 		if _, err := br.Peek(1); err == nil {
 			dec := json.NewDecoder(br)
+			foundRequestBody = true
 
 			if err := dec.Decode(&req); err != nil {
 				w.WriteHeader(http.StatusBadRequest)
 				writeResponse(w, errorResponse{
 					Error: fmt.Errorf("error decoding request body as JSON: %w", err).Error(),
+				})
+				return
+			}
+		}
+
+		if req, ok := any(req).(validator); ok && foundRequestBody {
+			if err := req.Validate(); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				writeResponse(w, errorResponse{
+					Error: fmt.Errorf("invalid request body: %w", err).Error(),
 				})
 				return
 			}

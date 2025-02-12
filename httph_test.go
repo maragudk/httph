@@ -11,9 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/maragudk/is"
-
 	"maragu.dev/httph"
+	"maragu.dev/is"
 )
 
 type validatedFormReq struct{}
@@ -156,6 +155,17 @@ func (t tinyJSONReq) MaxSizeBytes() int64 {
 	return 1
 }
 
+type validatedJSONReq struct {
+	Name string
+}
+
+func (v validatedJSONReq) Validate() error {
+	if v.Name == "" {
+		return errors.New("name cannot be empty")
+	}
+	return nil
+}
+
 func TestJSONHandler(t *testing.T) {
 	t.Run("encodes response body to JSON", func(t *testing.T) {
 		type jsonRes struct {
@@ -282,6 +292,21 @@ func TestJSONHandler(t *testing.T) {
 
 		is.Equal(t, http.StatusBadRequest, res.Result().StatusCode)
 		is.Equal(t, `{"Error":"error decoding request body as JSON: http: request body too large"}`, readBody(t, res))
+	})
+
+	t.Run("returns bad request if request body fails validation", func(t *testing.T) {
+		h := httph.JSONHandler(func(w http.ResponseWriter, r *http.Request, req validatedJSONReq) (any, error) {
+			return nil, nil
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(`{"Name":""}`))
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusBadRequest, res.Result().StatusCode)
+		is.Equal(t, `{"Error":"invalid request body: name cannot be empty"}`, readBody(t, res))
 	})
 }
 
