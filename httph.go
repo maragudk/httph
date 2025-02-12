@@ -329,3 +329,23 @@ func VersionedAssets(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// HTTPError is an [error] that can be used to return an HTTP status code with an error message.
+type HTTPError struct {
+	Code int
+	Err  error
+}
+
+func (h HTTPError) Error() string {
+	if h.Err != nil {
+		return h.Err.Error()
+	}
+	return http.StatusText(h.Code)
+}
+
+func (h HTTPError) StatusCode() int {
+	if h.Code == 0 {
+		return http.StatusInternalServerError
+	}
+	return h.Code
+}
