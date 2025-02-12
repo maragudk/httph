@@ -308,6 +308,21 @@ func TestJSONHandler(t *testing.T) {
 		is.Equal(t, http.StatusBadRequest, res.Result().StatusCode)
 		is.Equal(t, `{"Error":"invalid request body: name cannot be empty"}`, readBody(t, res))
 	})
+
+	t.Run("returns bad request if request body should be validated but is not present", func(t *testing.T) {
+		h := httph.JSONHandler(func(w http.ResponseWriter, r *http.Request, req validatedJSONReq) (any, error) {
+			return nil, nil
+		})
+
+		req := httptest.NewRequest(http.MethodPost, "/", nil)
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusBadRequest, res.Result().StatusCode)
+		is.Equal(t, `{"Error":"invalid request body: name cannot be empty"}`, readBody(t, res))
+	})
 }
 
 func ExampleJSONHandler() {
