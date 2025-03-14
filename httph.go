@@ -330,6 +330,22 @@ func VersionedAssets(next http.Handler) http.Handler {
 	})
 }
 
+// ErrorHandler takes a function that is like a regular [http.HandlerFunc] from the standard library,
+// except it also returns an error. If the error implements the statusCodeGiver interface, it returns
+// that status code. Otherwise, it defaults to HTTP 500.
+func ErrorHandler(h func(http.ResponseWriter, *http.Request) error) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if err := h(w, r); err != nil {
+			code := http.StatusInternalServerError
+			if err, ok := err.(statusCodeGiver); ok {
+				code = err.StatusCode()
+			}
+
+			http.Error(w, err.Error(), code)
+		}
+	}
+}
+
 // HTTPError is an [error] that can be used to return an HTTP status code with an error message.
 type HTTPError struct {
 	Code int

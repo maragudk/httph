@@ -480,3 +480,62 @@ func TestVersionedAssets(t *testing.T) {
 		is.Equal(t, "/script.js", req.URL.Path)
 	})
 }
+
+func TestErrorHandler(t *testing.T) {
+	t.Run("returns no error when handler returns nil", func(t *testing.T) {
+		h := httph.ErrorHandler(func(w http.ResponseWriter, r *http.Request) error {
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte("success"))
+			return nil
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		res := httptest.NewRecorder()
+
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusAccepted, res.Result().StatusCode)
+		is.Equal(t, "success", readBody(t, res))
+	})
+
+	t.Run("returns error message with HTTP 500 when handler returns error", func(t *testing.T) {
+		h := httph.ErrorHandler(func(w http.ResponseWriter, r *http.Request) error {
+			return errors.New("something went wrong")
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		res := httptest.NewRecorder()
+
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusInternalServerError, res.Result().StatusCode)
+		is.Equal(t, "something went wrong", readBody(t, res))
+	})
+
+	t.Run("returns error message with custom status code when error implements statusCodeGiver", func(t *testing.T) {
+		h := httph.ErrorHandler(func(w http.ResponseWriter, r *http.Request) error {
+			return &httpError{http.StatusTeapot}
+		})
+
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		res := httptest.NewRecorder()
+
+		h.ServeHTTP(res, req)
+
+		is.Equal(t, http.StatusTeapot, res.Result().StatusCode)
+		is.Equal(t, "I'm a teapot", readBody(t, res))
+	})
+}
+
+func ExampleErrorHandler() {
+	h := httph.ErrorHandler(func(w http.ResponseWriter, r *http.Request) error {
+		return httph.HTTPError{Code: http.StatusTeapot}
+	})
+
+	// Error case
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/", nil))
+	body, _ := io.ReadAll(w.Result().Body)
+	fmt.Println(string(body))
+	//Output: I'm a teapot
+}
