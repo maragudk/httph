@@ -127,18 +127,6 @@ func readBody(t *testing.T, r *httptest.ResponseRecorder) string {
 	return strings.TrimSpace(string(d))
 }
 
-type httpError struct {
-	code int
-}
-
-func (h *httpError) Error() string {
-	return http.StatusText(h.code)
-}
-
-func (h *httpError) StatusCode() int {
-	return h.code
-}
-
 type jsonRes struct {
 	Message string
 }
@@ -239,7 +227,7 @@ func TestJSONHandler(t *testing.T) {
 
 	t.Run("returns error message with custom http status code if error satisfies statusCodeGiver", func(t *testing.T) {
 		h := httph.JSONHandler(func(w http.ResponseWriter, r *http.Request, _ any) (any, error) {
-			return nil, &httpError{http.StatusTeapot}
+			return nil, httph.HTTPError{Code: http.StatusTeapot}
 		})
 
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -514,7 +502,7 @@ func TestErrorHandler(t *testing.T) {
 
 	t.Run("returns error message with custom status code when error implements statusCodeGiver", func(t *testing.T) {
 		h := httph.ErrorHandler(func(w http.ResponseWriter, r *http.Request) error {
-			return &httpError{http.StatusTeapot}
+			return httph.HTTPError{Code: http.StatusTeapot}
 		})
 
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
