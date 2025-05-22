@@ -194,11 +194,13 @@ func ContentSecurityPolicy(optsFunc func(opts *ContentSecurityPolicyOptions)) Mi
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			opts := &ContentSecurityPolicyOptions{
-				DefaultSrc: "'none'",
-				FontSrc:    "'self'",
-				ImgSrc:     "'self'",
-				ScriptSrc:  "'self'",
-				StyleSrc:   "'self'",
+				ConnectSrc:  "'self'",
+				DefaultSrc:  "'none'",
+				FontSrc:     "'self'",
+				ImgSrc:      "'self'",
+				ManifestSrc: "'self'",
+				ScriptSrc:   "'self'",
+				StyleSrc:    "'self'",
 			}
 
 			if optsFunc != nil {

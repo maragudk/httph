@@ -349,7 +349,7 @@ func TestNoClickjacking(t *testing.T) {
 }
 
 func TestContentSecurityPolicy(t *testing.T) {
-	t.Run("restrict everything to 'none' except images, styles, scripts, and fonts", func(t *testing.T) {
+	t.Run("restrict everything to 'none' except connect, images, styles, scripts, manifest, and fonts", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 		res := httptest.NewRecorder()
 
@@ -357,7 +357,7 @@ func TestContentSecurityPolicy(t *testing.T) {
 		h.ServeHTTP(res, req)
 
 		is.Equal(t, http.StatusOK, res.Result().StatusCode)
-		is.Equal(t, "default-src 'none'; font-src 'self'; img-src 'self'; script-src 'self'; style-src 'self'",
+		is.Equal(t, "default-src 'none'; connect-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; script-src 'self'; style-src 'self'",
 			res.Result().Header.Get("Content-Security-Policy"))
 	})
 
@@ -374,7 +374,7 @@ func TestContentSecurityPolicy(t *testing.T) {
 		h.ServeHTTP(res, req)
 
 		is.Equal(t, http.StatusOK, res.Result().StatusCode)
-		is.Equal(t, "default-src https:; img-src 'self'; style-src 'self'",
+		is.Equal(t, "default-src https:; connect-src 'self'; img-src 'self'; manifest-src 'self'; style-src 'self'",
 			res.Result().Header.Get("Content-Security-Policy"))
 	})
 }
