@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -376,6 +377,126 @@ func TestContentSecurityPolicy(t *testing.T) {
 		is.Equal(t, http.StatusOK, res.Result().StatusCode)
 		is.Equal(t, "default-src https:; connect-src 'self'; img-src 'self'; manifest-src 'self'; style-src 'self'",
 			res.Result().Header.Get("Content-Security-Policy"))
+	})
+
+	t.Run("appends a nonce to script-src with ScriptSrcNonce", func(t *testing.T) {
+		v, nonce := serveWithCSP(t, func(opts *httph.ContentSecurityPolicyOptions) {
+			opts.ScriptSrcNonce = true
+		})
+
+		is.True(t, nonce != "")
+		is.Equal(t, fmt.Sprintf("default-src 'none'; connect-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; script-src 'self' 'nonce-%v'; style-src 'self'", nonce), v)
+	})
+
+	t.Run("appends a nonce to style-src with StyleSrcNonce", func(t *testing.T) {
+		v, nonce := serveWithCSP(t, func(opts *httph.ContentSecurityPolicyOptions) {
+			opts.StyleSrcNonce = true
+		})
+
+		is.True(t, nonce != "")
+		is.Equal(t, fmt.Sprintf("default-src 'none'; connect-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; script-src 'self'; style-src 'self' 'nonce-%v'", nonce), v)
+	})
+
+	t.Run("appends the same nonce to both script-src and style-src", func(t *testing.T) {
+		v, nonce := serveWithCSP(t, func(opts *httph.ContentSecurityPolicyOptions) {
+			opts.ScriptSrcNonce = true
+			opts.StyleSrcNonce = true
+		})
+
+		is.True(t, nonce != "")
+		is.Equal(t, fmt.Sprintf("default-src 'none'; connect-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; script-src 'self' 'nonce-%v'; style-src 'self' 'nonce-%v'", nonce, nonce), v)
+	})
+
+	t.Run("does not generate a nonce by default", func(t *testing.T) {
+		v, nonce := serveWithCSP(t, nil)
+
+		is.Equal(t, "", nonce)
+		is.Equal(t, "default-src 'none'; connect-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; script-src 'self'; style-src 'self'", v)
+	})
+
+	t.Run("generates a different nonce for each request through the same handler", func(t *testing.T) {
+		var nonces, headers []string
+
+		h := httph.ContentSecurityPolicy(func(opts *httph.ContentSecurityPolicyOptions) {
+			opts.ScriptSrcNonce = true
+		})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			nonces = append(nonces, httph.GetNonceFromContext(r.Context()))
+		}))
+
+		for range 2 {
+			res := httptest.NewRecorder()
+			h.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/", nil))
+			headers = append(headers, res.Result().Header.Get("Content-Security-Policy"))
+		}
+
+		is.True(t, nonces[0] != nonces[1])
+		for i, nonce := range nonces {
+			is.Equal(t, fmt.Sprintf("default-src 'none'; connect-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; script-src 'self' 'nonce-%v'; style-src 'self'", nonce), headers[i])
+		}
+	})
+
+	t.Run("generates a long nonce with characters safe for the header", func(t *testing.T) {
+		_, nonce := serveWithCSP(t, func(opts *httph.ContentSecurityPolicyOptions) {
+			opts.ScriptSrcNonce = true
+		})
+
+		is.True(t, len(nonce) >= 26)
+		is.True(t, regexp.MustCompile(`^[A-Za-z0-9+/\-_]+=*$`).MatchString(nonce))
+	})
+
+	t.Run("sets script-src to just the nonce if its value is empty", func(t *testing.T) {
+		v, nonce := serveWithCSP(t, func(opts *httph.ContentSecurityPolicyOptions) {
+			opts.ScriptSrc = ""
+			opts.ScriptSrcNonce = true
+		})
+
+		is.True(t, nonce != "")
+		is.Equal(t, fmt.Sprintf("default-src 'none'; connect-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; script-src 'nonce-%v'; style-src 'self'", nonce), v)
+	})
+
+	t.Run("sets style-src to just the nonce if its value is empty", func(t *testing.T) {
+		v, nonce := serveWithCSP(t, func(opts *httph.ContentSecurityPolicyOptions) {
+			opts.StyleSrc = ""
+			opts.StyleSrcNonce = true
+		})
+
+		is.True(t, nonce != "")
+		is.Equal(t, fmt.Sprintf("default-src 'none'; connect-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; script-src 'self'; style-src 'nonce-%v'", nonce), v)
+	})
+
+	t.Run("does not add the nonce to script-src-elem and style-src-elem", func(t *testing.T) {
+		v, nonce := serveWithCSP(t, func(opts *httph.ContentSecurityPolicyOptions) {
+			opts.ScriptSrcElem = "'self'"
+			opts.ScriptSrcNonce = true
+			opts.StyleSrcElem = "'self'"
+			opts.StyleSrcNonce = true
+		})
+
+		is.Equal(t, fmt.Sprintf("default-src 'none'; connect-src 'self'; font-src 'self'; img-src 'self'; manifest-src 'self'; script-src 'self' 'nonce-%v'; script-src-elem 'self'; style-src 'self' 'nonce-%v'; style-src-elem 'self'", nonce, nonce), v)
+	})
+}
+
+// serveWithCSP calls the ContentSecurityPolicy Middleware with the given options function,
+// returning the Content-Security-Policy header value and the nonce seen by the inner handler.
+func serveWithCSP(t *testing.T, optsFunc func(opts *httph.ContentSecurityPolicyOptions)) (header, nonce string) {
+	t.Helper()
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	res := httptest.NewRecorder()
+
+	h := httph.ContentSecurityPolicy(optsFunc)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		nonce = httph.GetNonceFromContext(r.Context())
+	}))
+	h.ServeHTTP(res, req)
+
+	is.Equal(t, http.StatusOK, res.Result().StatusCode)
+
+	return res.Result().Header.Get("Content-Security-Policy"), nonce
+}
+
+func TestGetNonceFromContext(t *testing.T) {
+	t.Run("returns the empty string if there is no nonce in the context", func(t *testing.T) {
+		is.Equal(t, "", httph.GetNonceFromContext(t.Context()))
 	})
 }
 
