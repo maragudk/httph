@@ -1,6 +1,7 @@
 package httph_test
 
 import (
+	"context"
 	_ "embed"
 	"errors"
 	"fmt"
@@ -702,4 +703,65 @@ func ExampleErrorHandler() {
 	body, _ := io.ReadAll(w.Result().Body)
 	fmt.Println(string(body))
 	//Output: I'm a teapot
+}
+
+type customError struct {
+	Reason string
+}
+
+func (e *customError) Error() string {
+	return e.Reason
+}
+
+func TestHTTPError(t *testing.T) {
+	t.Run("errors.Is finds the wrapped error", func(t *testing.T) {
+		tests := []struct {
+			name string
+			err  error
+		}{
+			{name: "directly wrapped", err: context.Canceled},
+			{name: "further wrapped", err: fmt.Errorf("error doing thing: %w", context.Canceled)},
+		}
+
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				err := httph.HTTPError{Code: http.StatusBadRequest, Err: test.err}
+
+				is.True(t, errors.Is(err, context.Canceled))
+				is.True(t, !errors.Is(err, context.DeadlineExceeded))
+			})
+		}
+	})
+
+	t.Run("errors.Is finds the wrapped error when the HTTPError is itself wrapped", func(t *testing.T) {
+		err := fmt.Errorf("error handling request: %w", httph.HTTPError{Code: http.StatusBadRequest, Err: context.Canceled})
+
+		is.True(t, errors.Is(err, context.Canceled))
+	})
+
+	t.Run("errors.As reaches a wrapped custom error type", func(t *testing.T) {
+		err := httph.HTTPError{
+			Code: http.StatusBadRequest,
+			Err:  fmt.Errorf("error doing thing: %w", &customError{Reason: "nope"}),
+		}
+
+		var target *customError
+		is.True(t, errors.As(err, &target))
+		is.Equal(t, "nope", target.Reason)
+	})
+
+	t.Run("errors.As still finds the HTTPError itself", func(t *testing.T) {
+		err := fmt.Errorf("error handling request: %w", httph.HTTPError{Code: http.StatusTeapot, Err: context.Canceled})
+
+		var target httph.HTTPError
+		is.True(t, errors.As(err, &target))
+		is.Equal(t, http.StatusTeapot, target.StatusCode())
+	})
+
+	t.Run("unwrap returns nil and errors.Is is false when there is no wrapped error", func(t *testing.T) {
+		err := httph.HTTPError{Code: http.StatusBadRequest}
+
+		is.True(t, err.Unwrap() == nil)
+		is.True(t, !errors.Is(err, context.Canceled))
+	})
 }

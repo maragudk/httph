@@ -424,6 +424,11 @@ func (h HTTPError) Error() string {
 	return http.StatusText(h.Code)
 }
 
+// Unwrap returns the wrapped error, so [errors.Is] and [errors.As] can see it.
+func (h HTTPError) Unwrap() error {
+	return h.Err
+}
+
 func (h HTTPError) StatusCode() int {
 	if h.Code == 0 {
 		return http.StatusInternalServerError
